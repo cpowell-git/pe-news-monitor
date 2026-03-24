@@ -26,52 +26,100 @@ load_dotenv()
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
+# Sources where ALL articles are auto-included (no keyword filtering)
+# These publications are so consistently relevant that filtering drops good articles
+AUTO_INCLUDE_SOURCES = ["QSR Media", "Franchise Business", "Inside Franchise Business"]
+AUTO_INCLUDE_RSS = [
+    "https://www.afr.com/rss/street-talk",  # AFR Street Talk — deal flow, PE, M&A
+]
+
 TOPICS = {
     "QSR & Franchising": [
         "QSR", "quick service restaurant", "fast food", "franchise",
         "franchisee", "franchising", "drive-thru", "food chain",
-        "restaurant chain", "fast casual",
+        "restaurant chain", "fast casual", "takeaway", "food court",
         # Australian QSR brands
         "Grill'd", "Betty's Burgers", "GYG", "Guzman y Gomez",
         "Boost Juice", "Schnitz", "Nando's", "Zambrero",
         "Oporto", "Red Rooster", "Chicken Treat", "Craveable",
         "Domino's", "Hungry Jack", "KFC", "McDonald's",
-        "Subway", "Pizza Hut",
+        "Subway", "Pizza Hut", "Pizza Capers",
         "Retail Food Group", "RFG", "Gloria Jean", "Brumby's",
         "Michel's Patisserie", "Donut King", "Crust Pizza",
-        "Collins Foods", "Sushi Sushi",
+        "Collins Foods", "Sushi Sushi", "Genki",
         "YOMG", "Augustus Gelatery", "Cheesecake Shop",
         "Chatime", "Gong Cha", "Starbucks Australia",
         "Noodle Box", "Roll'd", "San Churro",
         "Rashays", "Ribs & Burgers", "Zeus Street Greek",
-        "Motto Motto", "Fishbowl",
+        "Motto Motto", "Fishbowl", "Gami Chicken",
+        "Taco Bell Australia", "Wendy's Australia", "Carl's Jr",
+        "Muffin Break", "Jamaica Blue", "Foodco",
+        "Oliver's Real Food", "Sumo Salad", "Soul Origin",
+        "Mad Mex", "Fonda", "Hog's Breath",
+    ],
+    "Food & Beverage": [
+        "brewery", "brewer", "beer", "craft beer", "beverage",
+        "winery", "wine", "spirits", "distillery", "drinks",
+        "hospitality", "pub", "hotel group", "bar chain",
+        "cafe chain", "coffee chain", "bakery chain",
+        "food manufacturer", "food processing", "FMCG food",
+        "catering", "meal kit", "food delivery",
+        # Australian F&B brands & companies
+        "Lion", "Carlton & United", "CUB", "Coopers",
+        "Treasury Wine", "Penfolds", "Accolade Wines",
+        "Better Beer", "Inspired Unemployed",
+        "Patties Foods", "Bega Cheese", "a2 Milk",
+        "Goodman Fielder", "Inghams", "Tassal",
+        "T2 Tea", "Aeropress", "Vittoria Coffee",
     ],
     "Private Equity & M&A": [
         "private equity", "PE deal", "leveraged buyout", "LBO",
         "acquisition", "divestiture", "portfolio company", "bolt-on",
         "add-on acquisition", "management buyout", "MBO",
         "sponsor-backed", "take-private", "exit multiple",
-        "dry powder", "fund raise", "capital raise",
+        "dry powder", "fund raise", "capital raise", "capital raising",
         "hires CEO", "new CEO", "appoints CEO", "names CEO",
         "management change", "board appointment", "activist investor",
         "shareholder", "stake", "strategic review", "recapitalisation",
         "IPO", "listing", "float",
+        # Deal language (headlines)
+        "circles", "eyes", "targets", "swoops", "bids for",
+        "in talks", "weighs sale", "explores sale", "mandate",
+        "due diligence", "binding offer", "indicative offer",
+        "scheme of arrangement", "merger", "demerger",
+        "receivership", "administration", "collapsed",
+        "Luminis Partners", "Kroll", "Greenhill",
+        # PE firms — Australian
         "KKR", "Bain Capital", "Pacific Equity Partners",
         "BGH Capital", "Quadrant", "Advent Partners",
         "Allegro Funds", "Next Capital", "Adamantem",
         "Archer Capital", "Crescent Capital", "Navis Capital",
         "Anchorage Capital", "Five V Capital",
-        "Street Talk", "DataRoom",
+        "Tattarang", "Andrew Forrest", "CHAMP",
+        "Wolseley Private Equity", "Mercury Capital",
+        "Pemba Capital", "Ironbridge",
+        # PE firms — Global (active in AU)
+        "Partners Group", "Blackstone", "Carlyle",
+        "Apollo", "Warburg Pincus", "TPG Capital",
+        "CVC Capital", "EQT Partners", "Permira",
+        "Advent International", "Cinven", "PAG",
+        # Columns & sections
+        "Street Talk", "DataRoom", "Rear Window",
     ],
     "Retail & Consumer": [
         "retail", "consumer spending", "discretionary",
         "same-store sales", "SSS", "like-for-like",
         "foot traffic", "consumer sentiment", "FMCG",
         "shopping centre", "retail sales", "consumer confidence",
+        "pharmacy", "chemist", "Priceline", "Chemist Warehouse",
         "Woolworths", "Coles", "Wesfarmers", "JB Hi-Fi",
         "Kmart", "Target Australia", "Bunnings",
         "Premier Investments", "Lovisa", "Cotton On",
         "Country Road", "David Jones", "Myer",
+        "Harvey Norman", "Super Retail", "Rebel Sport",
+        "Accent Group", "Adairs", "Baby Bunting",
+        "Endeavour Group", "BWS", "Dan Murphy",
+        "Sigma Healthcare", "API", "Infinity",
     ],
     "Australian Economy & Markets": [
         "RBA", "interest rate", "Reserve Bank", "inflation Australia",
@@ -104,34 +152,42 @@ REPUTABLE_SOURCES = {
 PAYWALL_DOMAINS = ["afr.com", "theaustralian.com.au"]
 
 RSS_FEEDS = [
-    # AFR feeds
     "https://www.afr.com/rss/companies",
     "https://www.afr.com/rss/street-talk",
     "https://www.afr.com/rss/markets",
     "https://www.afr.com/rss/policy",
-    # The Australian
     "https://www.theaustralian.com.au/feed",
-    # QSR-specific
     "https://www.qsrmedia.com.au/feed",
 ]
 
-# Broader queries to catch corporate news, not just deals
 GOOGLE_NEWS_QUERIES = [
-    # Brand-specific (most reliable for catching individual articles)
+    # ── AFR Street Talk (broad — catches all deal activity) ──
+    "AFR Street Talk",
+    "site:afr.com street-talk",
+    # ── QSR brand-specific ──
     "Craveable Brands OR Oporto OR Red Rooster",
     "Retail Food Group OR Gloria Jean's OR Donut King",
     "Grill'd OR Betty's Burgers OR Zambrero",
-    "Guzman y Gomez OR GYG",
+    "Guzman y Gomez OR GYG Australia",
     "Collins Foods OR Domino's Australia",
-    "Sushi Sushi OR Roll'd OR Fishbowl",
+    "Sushi Sushi OR Genki Global OR Roll'd",
     "Boost Juice OR Chatime OR Gong Cha",
-    # Theme-based
+    "YOMG OR Augustus Gelatery OR Cheesecake Shop",
+    # ── Food & Beverage ──
+    "Australian brewery OR craft beer capital raising",
+    "Australia food beverage acquisition OR investment",
+    "Better Beer OR Inspired Unemployed",
+    # ── PE & M&A (broad) ──
+    "private equity Australia acquisition",
+    "private equity Australia food OR restaurant OR franchise OR retail",
+    "Partners Group OR BGH Capital OR Quadrant Australia",
+    "Allegro Funds OR Adamantem OR Anchorage Capital Australia",
+    # ── Theme-based (broad) ──
     "QSR franchise Australia",
     "restaurant chain Australia CEO OR acquisition OR expansion",
-    "private equity Australia food OR restaurant OR franchise",
     "franchise Australia sale OR acquisition OR investor",
-    "AFR Street Talk restaurant OR food OR franchise",
     "Australian fast food chain",
+    "Australia retail pharmacy OR Priceline OR Chemist Warehouse deal",
 ]
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -154,11 +210,10 @@ EXCEL_PATH = Path(os.getenv("EXCEL_PATH", "news_log.xlsx"))
 def get_lookback_hours():
     """72 hours on Monday, 24 hours otherwise."""
     now = datetime.now(timezone.utc)
-    return 7200 if now.weekday() == 0 else 2400
+    return 72 if now.weekday() == 0 else 24
 
 
 def is_reputable(url):
-    """Check if a URL belongs to an approved source."""
     for domain in REPUTABLE_SOURCES:
         if domain in url:
             return True, REPUTABLE_SOURCES[domain]
@@ -166,7 +221,7 @@ def is_reputable(url):
 
 
 def classify_article(title, snippet=""):
-    """Return the first matching topic for an article, or None."""
+    """Return the first matching topic, or None."""
     text = f"{title} {snippet}".lower()
     for topic, keywords in TOPICS.items():
         for kw in keywords:
@@ -176,20 +231,54 @@ def classify_article(title, snippet=""):
 
 
 def article_id(url):
-    """Stable hash for dedup."""
     return hashlib.md5(url.encode()).hexdigest()
+
+
+def is_auto_include_rss(feed_url):
+    """Check if this RSS feed should auto-include all articles."""
+    return any(auto_url in feed_url for auto_url in AUTO_INCLUDE_RSS)
+
+
+# ── Google News Source Matching ──────────────────────────────────────────────
+
+SOURCE_NAME_MAP = {
+    "australian financial review": "AFR",
+    "afr": "AFR",
+    "the australian": "The Australian",
+    "reuters": "Reuters",
+    "bloomberg": "Bloomberg",
+    "financial times": "Financial Times",
+    "wall street journal": "Wall Street Journal",
+    "wsj": "Wall Street Journal",
+    "qsr media": "QSR Media",
+    "qsrmedia": "QSR Media",
+    "franchise business": "Franchise Business",
+    "inside franchise business": "Inside Franchise Business",
+    "smartcompany": "SmartCompany",
+    "business news australia": "Business News Australia",
+    "abc news": "ABC News",
+    "abc": "ABC News",
+    "sydney morning herald": "SMH",
+    "smh": "SMH",
+    "the age": "The Age",
+    "news.com.au": "News.com.au",
+    "nine news": "Nine News",
+    "9news": "Nine News",
+    "the guardian": "The Guardian",
+    "guardian australia": "The Guardian",
+}
 
 
 # ── Article Discovery ────────────────────────────────────────────────────────
 
 def fetch_rss_articles(cutoff):
-    """Fetch articles from RSS feeds published after cutoff."""
     articles = {}
     for feed_url in RSS_FEEDS:
         try:
+            auto_include = is_auto_include_rss(feed_url)
             feed = feedparser.parse(feed_url)
             entry_count = len(feed.entries) if feed.entries else 0
-            print(f"[RSS] {feed_url} — {entry_count} entries")
+            print(f"[RSS] {feed_url} — {entry_count} entries{' (auto-include)' if auto_include else ''}")
             for entry in feed.entries:
                 url = entry.get("link", "")
                 if not url:
@@ -205,9 +294,15 @@ def fetch_rss_articles(cutoff):
                     continue
                 title = entry.get("title", "").strip()
                 snippet = entry.get("summary", "").strip()
-                topic = classify_article(title, snippet)
-                if not topic:
-                    continue
+
+                # Auto-include sources skip keyword filtering
+                if auto_include:
+                    topic = classify_article(title, snippet) or "Private Equity & M&A"
+                else:
+                    topic = classify_article(title, snippet)
+                    if not topic:
+                        continue
+
                 aid = article_id(url)
                 if aid not in articles:
                     articles[aid] = {
@@ -225,38 +320,8 @@ def fetch_rss_articles(cutoff):
 
 
 def fetch_google_news(cutoff):
-    """Fetch articles from Google News RSS for each query."""
-    # Build reverse lookup: source display name -> approved name
-    # Google News feed entries have a source tag like "Australian Financial Review"
-    SOURCE_NAME_MAP = {
-        "australian financial review": "AFR",
-        "afr": "AFR",
-        "the australian": "The Australian",
-        "reuters": "Reuters",
-        "bloomberg": "Bloomberg",
-        "financial times": "Financial Times",
-        "wall street journal": "Wall Street Journal",
-        "wsj": "Wall Street Journal",
-        "qsr media": "QSR Media",
-        "qsrmedia": "QSR Media",
-        "franchise business": "Franchise Business",
-        "inside franchise business": "Inside Franchise Business",
-        "smartcompany": "SmartCompany",
-        "business news australia": "Business News Australia",
-        "abc news": "ABC News",
-        "abc": "ABC News",
-        "sydney morning herald": "SMH",
-        "smh": "SMH",
-        "the age": "The Age",
-        "news.com.au": "News.com.au",
-        "nine news": "Nine News",
-        "9news": "Nine News",
-        "the guardian": "The Guardian",
-        "guardian australia": "The Guardian",
-    }
-
     articles = {}
-    skipped_sources = {}  # track which sources are being filtered out
+    skipped_sources = {}
 
     for query in GOOGLE_NEWS_QUERIES:
         try:
@@ -274,14 +339,12 @@ def fetch_google_news(cutoff):
                 if isinstance(source_tag, dict):
                     source_text = source_tag.get("title", "")
                 elif hasattr(source_tag, "title"):
-                    source_text = source_tag.title if hasattr(source_tag, "title") else str(source_tag)
+                    source_text = source_tag.title
                 else:
                     source_text = str(source_tag)
 
-                # Match against approved sources
                 source_name = SOURCE_NAME_MAP.get(source_text.lower().strip())
                 if not source_name:
-                    # Partial match fallback
                     for key, name in SOURCE_NAME_MAP.items():
                         if key in source_text.lower():
                             source_name = name
@@ -298,13 +361,19 @@ def fetch_google_news(cutoff):
                     continue
 
                 title = entry.get("title", "").strip()
-                # Strip trailing source attribution (e.g. " - Australian Financial Review")
                 title = re.sub(r"\s*-\s*[^-]+$", "", title)
-                topic = classify_article(title)
-                if not topic:
-                    topic = classify_article(title, entry.get("summary", ""))
-                if not topic:
-                    continue
+
+                # Auto-include for QSR Media, Franchise Business etc.
+                is_auto = source_name in AUTO_INCLUDE_SOURCES
+                if is_auto:
+                    topic = classify_article(title) or "QSR & Franchising"
+                else:
+                    topic = classify_article(title)
+                    if not topic:
+                        topic = classify_article(title, entry.get("summary", ""))
+                    if not topic:
+                        continue
+
                 aid = article_id(link)
                 if aid not in articles:
                     articles[aid] = {
@@ -318,7 +387,6 @@ def fetch_google_news(cutoff):
         except Exception as e:
             print(f"[Google News] Error with query '{query}': {e}")
 
-    # Log which non-approved sources were skipped (helps identify gaps)
     if skipped_sources:
         top_skipped = sorted(skipped_sources.items(), key=lambda x: -x[1])[:10]
         print(f"[Google News] Top skipped sources: {top_skipped}")
@@ -329,83 +397,68 @@ def fetch_google_news(cutoff):
 # ── Paywall Authentication & Scraping ────────────────────────────────────────
 
 def login_afr(session):
-    """Authenticate with AFR (Nine Entertainment SSO)."""
     try:
-        login_url = "https://login.nine.com.au/api/login"
-        payload = {
-            "email": AFR_EMAIL,
-            "password": AFR_PASSWORD,
-            "client_id": "afr",
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Origin": "https://www.afr.com",
-            "Referer": "https://www.afr.com/",
-        }
-        resp = session.post(login_url, json=payload, headers=headers, timeout=30)
+        resp = session.post(
+            "https://login.nine.com.au/api/login",
+            json={"email": AFR_EMAIL, "password": AFR_PASSWORD, "client_id": "afr"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Origin": "https://www.afr.com",
+                "Referer": "https://www.afr.com/",
+            },
+            timeout=30,
+        )
         if resp.status_code == 200:
             print("[AFR] Login successful")
             return True
-        else:
-            print(f"[AFR] Login failed: {resp.status_code} — {resp.text[:200]}")
-            return False
+        print(f"[AFR] Login failed: {resp.status_code} — {resp.text[:200]}")
+        return False
     except Exception as e:
         print(f"[AFR] Login error: {e}")
         return False
 
 
 def login_australian(session):
-    """Authenticate with The Australian (News Corp SSO)."""
     try:
-        login_url = "https://auth-api.news.com.au/v4/login"
-        payload = {
-            "email": AUSTRALIAN_EMAIL,
-            "password": AUSTRALIAN_PASSWORD,
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Origin": "https://www.theaustralian.com.au",
-            "Referer": "https://www.theaustralian.com.au/",
-        }
-        resp = session.post(login_url, json=payload, headers=headers, timeout=30)
+        resp = session.post(
+            "https://auth-api.news.com.au/v4/login",
+            json={"email": AUSTRALIAN_EMAIL, "password": AUSTRALIAN_PASSWORD},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Origin": "https://www.theaustralian.com.au",
+                "Referer": "https://www.theaustralian.com.au/",
+            },
+            timeout=30,
+        )
         if resp.status_code == 200:
             print("[The Australian] Login successful")
             return True
-        else:
-            print(f"[The Australian] Login failed: {resp.status_code} — {resp.text[:200]}")
-            return False
+        print(f"[The Australian] Login failed: {resp.status_code} — {resp.text[:200]}")
+        return False
     except Exception as e:
         print(f"[The Australian] Login error: {e}")
         return False
 
 
 def fetch_full_article(url, session):
-    """Fetch full article text from a paywalled URL using an authenticated session."""
     try:
-        headers = {
+        resp = session.get(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        }
-        resp = session.get(url, headers=headers, timeout=30)
+        }, timeout=30)
         if resp.status_code != 200:
             print(f"[Scrape] Non-200 for {url}: {resp.status_code}")
             return None
         soup = BeautifulSoup(resp.text, "html.parser")
-
-        # AFR article body
-        body = soup.find("div", {"id": "article-body"})
-        if not body:
-            body = soup.find("div", class_=re.compile(r"article[_-]?body|story[_-]?body", re.I))
-        if not body:
-            # The Australian article body
-            body = soup.find("div", {"id": "story"})
-        if not body:
-            body = soup.find("article")
-
+        body = (
+            soup.find("div", {"id": "article-body"})
+            or soup.find("div", class_=re.compile(r"article[_-]?body|story[_-]?body", re.I))
+            or soup.find("div", {"id": "story"})
+            or soup.find("article")
+        )
         if body:
-            paragraphs = body.find_all("p")
-            text = "\n".join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+            text = "\n".join(p.get_text(strip=True) for p in body.find_all("p") if p.get_text(strip=True))
             if len(text) > 200:
                 return text
         print(f"[Scrape] Could not extract body from {url}")
@@ -418,23 +471,20 @@ def fetch_full_article(url, session):
 # ── Summarisation ────────────────────────────────────────────────────────────
 
 def summarise_article(title, full_text):
-    """Use Claude API to produce a 2-3 sentence summary."""
     if not ANTHROPIC_API_KEY or not full_text:
         return ""
     try:
         client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        prompt = (
-            f"You are an investment analyst at an Australian mid-market private equity firm "
-            f"focused on QSR and franchise investments.\n\n"
-            f"Summarise the following article in 2-3 concise sentences. Focus on what is "
-            f"most relevant for PE deal origination, valuation, and portfolio monitoring.\n\n"
-            f"Article title: {title}\n\n"
-            f"Article text:\n{full_text[:12000]}"
-        )
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=300,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": (
+                "You are an investment analyst at an Australian mid-market private equity firm "
+                "focused on QSR and franchise investments.\n\n"
+                "Summarise the following article in 2-3 concise sentences. Focus on what is "
+                "most relevant for PE deal origination, valuation, and portfolio monitoring.\n\n"
+                f"Article title: {title}\n\nArticle text:\n{full_text[:12000]}"
+            )}],
         )
         return response.content[0].text.strip()
     except Exception as e:
@@ -458,7 +508,6 @@ COL_WIDTHS = [14, 55, 22, 50, 28, 65]
 
 
 def init_excel(path):
-    """Create a new Excel workbook with formatted headers."""
     wb = Workbook()
     ws = wb.active
     ws.title = "News Log"
@@ -470,13 +519,12 @@ def init_excel(path):
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = THIN_BORDER
         ws.column_dimensions[cell.column_letter].width = width
-    ws.auto_filter.ref = f"A1:F1"
+    ws.auto_filter.ref = "A1:F1"
     wb.save(path)
     return wb
 
 
 def append_to_excel(articles_list):
-    """Append new articles to the Excel news log, deduplicating by URL."""
     if EXCEL_PATH.exists():
         wb = load_workbook(EXCEL_PATH)
         ws = wb["News Log"]
@@ -484,7 +532,6 @@ def append_to_excel(articles_list):
         wb = init_excel(EXCEL_PATH)
         ws = wb["News Log"]
 
-    # Collect existing URLs for dedup
     existing_urls = set()
     for row in ws.iter_rows(min_row=2, min_col=4, max_col=4, values_only=True):
         if row[0]:
@@ -512,7 +559,6 @@ def append_to_excel(articles_list):
 # ── Email Digest ─────────────────────────────────────────────────────────────
 
 def build_email_html(articles_by_topic, run_date):
-    """Render an HTML email digest grouped by topic."""
     lookback = get_lookback_hours()
     html = f"""
     <html><body style="font-family: Arial, sans-serif; color: #1a1a1a; max-width: 700px; margin: 0 auto;">
@@ -528,7 +574,15 @@ def build_email_html(articles_by_topic, run_date):
     if not articles_by_topic:
         html += '<p style="color:#666;">No relevant articles found in this period.</p>'
     else:
-        for topic, arts in articles_by_topic.items():
+        # Display topics in preferred order
+        topic_order = [
+            "QSR & Franchising", "Food & Beverage", "Private Equity & M&A",
+            "Retail & Consumer", "Australian Economy & Markets",
+        ]
+        for topic in topic_order:
+            arts = articles_by_topic.get(topic, [])
+            if not arts:
+                continue
             html += f'<h2 style="font-size:16px; color:#1B2A4A; border-bottom:2px solid #1B2A4A; padding-bottom:4px; margin-top:24px;">{topic} ({len(arts)})</h2>'
             for art in arts:
                 summary_block = ""
@@ -554,7 +608,6 @@ def build_email_html(articles_by_topic, run_date):
 
 
 def send_email(html, run_date):
-    """Send the HTML digest via SMTP."""
     if not all([SMTP_USER, SMTP_PASS, EMAIL_TO]):
         print("[Email] Missing SMTP credentials — skipping send")
         return False
@@ -606,13 +659,10 @@ def main():
         is_paywall = any(d in art["url"] for d in PAYWALL_DOMAINS)
         if not is_paywall:
             continue
-
         session = afr_session if "afr.com" in art["url"] else aus_session
         logged_in = afr_logged_in if "afr.com" in art["url"] else aus_logged_in
-
         if not logged_in:
             continue
-
         full_text = fetch_full_article(art["url"], session)
         if full_text:
             art["summary"] = summarise_article(art["title"], full_text)
