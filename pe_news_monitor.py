@@ -30,12 +30,21 @@ TOPICS = {
     "QSR & Franchising": [
         "QSR", "quick service restaurant", "fast food", "franchise",
         "franchisee", "franchising", "drive-thru", "food chain",
-        "restaurant chain", "fast casual", "Grill'd", "Betty's Burgers",
-        "GYG", "Guzman", "Boost Juice", "Schnitz", "Nando's",
-        "Domino's Australia", "Hungry Jack", "KFC Australia",
-        "McDonald's Australia", "Subway Australia", "Zambrero",
-        "Oporto", "Retail Food Group", "Collins Foods",
+        "restaurant chain", "fast casual",
+        # Australian QSR brands
+        "Grill'd", "Betty's Burgers", "GYG", "Guzman y Gomez",
+        "Boost Juice", "Schnitz", "Nando's", "Zambrero",
+        "Oporto", "Red Rooster", "Chicken Treat", "Craveable",
+        "Domino's", "Hungry Jack", "KFC", "McDonald's",
+        "Subway", "Pizza Hut",
+        "Retail Food Group", "RFG", "Gloria Jean", "Brumby's",
+        "Michel's Patisserie", "Donut King", "Crust Pizza",
+        "Collins Foods", "Sushi Sushi",
         "YOMG", "Augustus Gelatery", "Cheesecake Shop",
+        "Chatime", "Gong Cha", "Starbucks Australia",
+        "Noodle Box", "Roll'd", "San Churro",
+        "Rashays", "Ribs & Burgers", "Zeus Street Greek",
+        "Motto Motto", "Fishbowl",
     ],
     "Private Equity & M&A": [
         "private equity", "PE deal", "leveraged buyout", "LBO",
@@ -43,9 +52,16 @@ TOPICS = {
         "add-on acquisition", "management buyout", "MBO",
         "sponsor-backed", "take-private", "exit multiple",
         "dry powder", "fund raise", "capital raise",
+        "hires CEO", "new CEO", "appoints CEO", "names CEO",
+        "management change", "board appointment", "activist investor",
+        "shareholder", "stake", "strategic review", "recapitalisation",
+        "IPO", "listing", "float",
         "KKR", "Bain Capital", "Pacific Equity Partners",
         "BGH Capital", "Quadrant", "Advent Partners",
         "Allegro Funds", "Next Capital", "Adamantem",
+        "Archer Capital", "Crescent Capital", "Navis Capital",
+        "Anchorage Capital", "Five V Capital",
+        "Street Talk", "DataRoom",
     ],
     "Retail & Consumer": [
         "retail", "consumer spending", "discretionary",
@@ -53,6 +69,9 @@ TOPICS = {
         "foot traffic", "consumer sentiment", "FMCG",
         "shopping centre", "retail sales", "consumer confidence",
         "Woolworths", "Coles", "Wesfarmers", "JB Hi-Fi",
+        "Kmart", "Target Australia", "Bunnings",
+        "Premier Investments", "Lovisa", "Cotton On",
+        "Country Road", "David Jones", "Myer",
     ],
     "Australian Economy & Markets": [
         "RBA", "interest rate", "Reserve Bank", "inflation Australia",
@@ -77,23 +96,42 @@ REPUTABLE_SOURCES = {
     "abc.net.au": "ABC News",
     "smh.com.au": "SMH",
     "theage.com.au": "The Age",
+    "news.com.au": "News.com.au",
+    "9news.com.au": "Nine News",
+    "theguardian.com": "The Guardian",
 }
 
 PAYWALL_DOMAINS = ["afr.com", "theaustralian.com.au"]
 
 RSS_FEEDS = [
+    # AFR feeds
     "https://www.afr.com/rss/companies",
     "https://www.afr.com/rss/street-talk",
     "https://www.afr.com/rss/markets",
+    "https://www.afr.com/rss/policy",
+    # The Australian
     "https://www.theaustralian.com.au/feed",
+    # QSR-specific
+    "https://www.qsrmedia.com.au/feed",
 ]
 
+# Broader queries to catch corporate news, not just deals
 GOOGLE_NEWS_QUERIES = [
-    "QSR franchise Australia acquisition",
-    "private equity Australia deal",
-    "Australian restaurant chain investment",
-    "franchise acquisition Australia 2026",
-    "quick service restaurant Australia",
+    # Brand-specific (most reliable for catching individual articles)
+    "Craveable Brands OR Oporto OR Red Rooster",
+    "Retail Food Group OR Gloria Jean's OR Donut King",
+    "Grill'd OR Betty's Burgers OR Zambrero",
+    "Guzman y Gomez OR GYG",
+    "Collins Foods OR Domino's Australia",
+    "Sushi Sushi OR Roll'd OR Fishbowl",
+    "Boost Juice OR Chatime OR Gong Cha",
+    # Theme-based
+    "QSR franchise Australia",
+    "restaurant chain Australia CEO OR acquisition OR expansion",
+    "private equity Australia food OR restaurant OR franchise",
+    "franchise Australia sale OR acquisition OR investor",
+    "AFR Street Talk restaurant OR food OR franchise",
+    "Australian fast food chain",
 ]
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -114,8 +152,9 @@ EXCEL_PATH = Path(os.getenv("EXCEL_PATH", "news_log.xlsx"))
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def get_lookback_hours():
-    """Temporarily extended for testing."""
-    return 1680
+    """72 hours on Monday, 24 hours otherwise."""
+    now = datetime.now(timezone.utc)
+    return 72 if now.weekday() == 0 else 24
 
 
 def is_reputable(url):
@@ -141,6 +180,22 @@ def article_id(url):
     return hashlib.md5(url.encode()).hexdigest()
 
 
+def resolve_google_news_url(google_url):
+    """Resolve a Google News redirect URL to the actual article URL."""
+    try:
+        resp = requests.head(google_url, allow_redirects=True, timeout=10,
+                             headers={"User-Agent": "Mozilla/5.0"})
+        return resp.url
+    except Exception:
+        try:
+            resp = requests.get(google_url, allow_redirects=True, timeout=10,
+                                headers={"User-Agent": "Mozilla/5.0"},
+                                stream=True)
+            return resp.url
+        except Exception:
+            return google_url
+
+
 # ── Article Discovery ────────────────────────────────────────────────────────
 
 def fetch_rss_articles(cutoff):
@@ -149,6 +204,8 @@ def fetch_rss_articles(cutoff):
     for feed_url in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
+            entry_count = len(feed.entries) if feed.entries else 0
+            print(f"[RSS] {feed_url} — {entry_count} entries")
             for entry in feed.entries:
                 url = entry.get("link", "")
                 if not url:
@@ -179,6 +236,7 @@ def fetch_rss_articles(cutoff):
                     }
         except Exception as e:
             print(f"[RSS] Error fetching {feed_url}: {e}")
+    print(f"[RSS] Total: {len(articles)} articles from RSS feeds")
     return articles
 
 
@@ -189,29 +247,48 @@ def fetch_google_news(cutoff):
         try:
             url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}+when:7d&hl=en-AU&gl=AU&ceid=AU:en"
             feed = feedparser.parse(url)
+            entry_count = len(feed.entries) if feed.entries else 0
+            print(f"[Google News] '{query}' — {entry_count} entries")
             for entry in feed.entries:
                 link = entry.get("link", "")
                 if not link:
                     continue
-                reputable, source_name = is_reputable(link)
+
+                # Google News returns redirect URLs — resolve to actual article
+                resolved_link = resolve_google_news_url(link)
+                reputable, source_name = is_reputable(resolved_link)
                 if not reputable:
-                    continue
+                    # Also check the source field in the feed entry
+                    source_tag = entry.get("source", {})
+                    source_text = source_tag.get("title", "") if isinstance(source_tag, dict) else str(source_tag)
+                    for domain, name in REPUTABLE_SOURCES.items():
+                        if name.lower() in source_text.lower():
+                            reputable = True
+                            source_name = name
+                            break
+                    if not reputable:
+                        continue
+
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     from calendar import timegm
                     published = datetime.fromtimestamp(timegm(entry.published_parsed), tz=timezone.utc)
                 if published and published < cutoff:
                     continue
+
                 title = entry.get("title", "").strip()
-                title = re.sub(r"\s*-\s*[^-]+$", "", title)  # strip trailing source
+                # Strip trailing source attribution (e.g. " - AFR")
+                title = re.sub(r"\s*-\s*[^-]+$", "", title)
                 topic = classify_article(title)
                 if not topic:
+                    topic = classify_article(title, entry.get("summary", ""))
+                if not topic:
                     continue
-                aid = article_id(link)
+                aid = article_id(resolved_link)
                 if aid not in articles:
                     articles[aid] = {
                         "title": title,
-                        "url": link,
+                        "url": resolved_link,
                         "source": source_name,
                         "topic": topic,
                         "date": published or datetime.now(timezone.utc),
@@ -219,6 +296,7 @@ def fetch_google_news(cutoff):
                     }
         except Exception as e:
             print(f"[Google News] Error with query '{query}': {e}")
+    print(f"[Google News] Total: {len(articles)} articles from Google News")
     return articles
 
 
@@ -483,7 +561,7 @@ def main():
     articles = {}
     articles.update(fetch_rss_articles(cutoff))
     articles.update(fetch_google_news(cutoff))
-    print(f"[Discovery] {len(articles)} articles found")
+    print(f"[Discovery] {len(articles)} total articles found")
 
     if not articles:
         print("[Run] No articles — sending empty digest")
