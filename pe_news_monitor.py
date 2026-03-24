@@ -242,7 +242,38 @@ def fetch_rss_articles(cutoff):
 
 def fetch_google_news(cutoff):
     """Fetch articles from Google News RSS for each query."""
+    # Build reverse lookup: source display name -> approved name
+    # Google News feed entries have a source tag like "Australian Financial Review"
+    SOURCE_NAME_MAP = {
+        "australian financial review": "AFR",
+        "afr": "AFR",
+        "the australian": "The Australian",
+        "reuters": "Reuters",
+        "bloomberg": "Bloomberg",
+        "financial times": "Financial Times",
+        "wall street journal": "Wall Street Journal",
+        "wsj": "Wall Street Journal",
+        "qsr media": "QSR Media",
+        "qsrmedia": "QSR Media",
+        "franchise business": "Franchise Business",
+        "inside franchise business": "Inside Franchise Business",
+        "smartcompany": "SmartCompany",
+        "business news australia": "Business News Australia",
+        "abc news": "ABC News",
+        "abc": "ABC News",
+        "sydney morning herald": "SMH",
+        "smh": "SMH",
+        "the age": "The Age",
+        "news.com.au": "News.com.au",
+        "nine news": "Nine News",
+        "9news": "Nine News",
+        "the guardian": "The Guardian",
+        "guardian australia": "The Guardian",
+    }
+
     articles = {}
+    skipped_sources = {}  # track which sources are being filtered out
+
     for query in GOOGLE_NEWS_QUERIES:
         try:
             url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}+when:7d&hl=en-AU&gl=AU&ceid=AU:en"
@@ -254,20 +285,26 @@ def fetch_google_news(cutoff):
                 if not link:
                     continue
 
-                # Google News returns redirect URLs — resolve to actual article
-                resolved_link = resolve_google_news_url(link)
-                reputable, source_name = is_reputable(resolved_link)
-                if not reputable:
-                    # Also check the source field in the feed entry
-                    source_tag = entry.get("source", {})
-                    source_text = source_tag.get("title", "") if isinstance(source_tag, dict) else str(source_tag)
-                    for domain, name in REPUTABLE_SOURCES.items():
-                        if name.lower() in source_text.lower():
-                            reputable = True
+                # Use the source tag from the feed (no URL resolution needed)
+                source_tag = entry.get("source", {})
+                if isinstance(source_tag, dict):
+                    source_text = source_tag.get("title", "")
+                elif hasattr(source_tag, "title"):
+                    source_text = source_tag.title if hasattr(source_tag, "title") else str(source_tag)
+                else:
+                    source_text = str(source_tag)
+
+                # Match against approved sources
+                source_name = SOURCE_NAME_MAP.get(source_text.lower().strip())
+                if not source_name:
+                    # Partial match fallback
+                    for key, name in SOURCE_NAME_MAP.items():
+                        if key in source_text.lower():
                             source_name = name
                             break
-                    if not reputable:
-                        continue
+                if not source_name:
+                    skipped_sources[source_text] = skipped_sources.get(source_text, 0) + 1
+                    continue
 
                 published = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
@@ -277,18 +314,18 @@ def fetch_google_news(cutoff):
                     continue
 
                 title = entry.get("title", "").strip()
-                # Strip trailing source attribution (e.g. " - AFR")
+                # Strip trailing source attribution (e.g. " - Australian Financial Review")
                 title = re.sub(r"\s*-\s*[^-]+$", "", title)
                 topic = classify_article(title)
                 if not topic:
                     topic = classify_article(title, entry.get("summary", ""))
                 if not topic:
                     continue
-                aid = article_id(resolved_link)
+                aid = article_id(link)
                 if aid not in articles:
                     articles[aid] = {
                         "title": title,
-                        "url": resolved_link,
+                        "url": link,
                         "source": source_name,
                         "topic": topic,
                         "date": published or datetime.now(timezone.utc),
@@ -296,11 +333,77 @@ def fetch_google_news(cutoff):
                     }
         except Exception as e:
             print(f"[Google News] Error with query '{query}': {e}")
+
+    # Log which non-approved sources were skipped (helps identify gaps)
+    if skipped_sources:
+        top_skipped = sorted(skipped_sources.items(), key=lambda x: -x[1])[:10]
+        print(f"[Google News] Top skipped sources: {top_skipped}")
     print(f"[Google News] Total: {len(articles)} articles from Google News")
     return articles
 
 
-# ── Paywall Authentication & Scraping ────────────────────────────────────────
+# ── Direct Section Scraping (logged-in) ──────────────────────────────────────
+
+AFR_SECTIONS = {
+    "https://www.afr.com/street-talk": "AFR",
+    "https://www.afr.com/companies": "AFR",
+    "https://www.afr.com/markets": "AFR",
+}
+
+AUSTRALIAN_SECTIONS = {
+    "https://www.theaustralian.com.au/business": "The Australian",
+}
+
+
+def scrape_section_links(session, section_url, source_name):
+    """Scrape article links from a section page using an authenticated session."""
+    articles = []
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        resp = session.get(section_url, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            print(f"[Section] Non-200 for {section_url}: {resp.status_code}")
+            return articles
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Find article links — AFR and The Australian both use <a> tags with href to article paths
+        seen_urls = set()
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+
+            # Build absolute URL
+            if href.startswith("/"):
+                from urllib.parse import urlparse
+                parsed = urlparse(section_url)
+                href = f"{parsed.scheme}://{parsed.netloc}{href}"
+
+            # Filter: must be on the same domain and look like an article path
+            if source_name == "AFR" and "afr.com" not in href:
+                continue
+            if source_name == "The Australian" and "theaustralian.com.au" not in href:
+                continue
+
+            # Skip non-article links (sections, tags, authors, etc.)
+            skip_patterns = ["/topic/", "/by/", "/author/", "/video/", "/podcast/",
+                             "/newsletters", "/subscribe", "/login", "/search",
+                             "#", "javascript:", "/rss"]
+            if any(p in href.lower() for p in skip_patterns):
+                continue
+
+            # Must have a slug-like path (at least 3 segments or a date pattern)
+            path_parts = href.rstrip("/").split("/")
+            if len(path_parts) < 5:
+                continue
+
+            if href in seen_urls:
+                continue
+            seen_urls.add(href)
+
+            # Extract title from the link text or nearest heading
+            title = a_tag.get_text(strip=True)
+            if not title or len(title) < 10
 
 def login_afr(session):
     """Authenticate with AFR (Nine Entertainment SSO)."""
