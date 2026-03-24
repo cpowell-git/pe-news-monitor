@@ -180,22 +180,6 @@ def article_id(url):
     return hashlib.md5(url.encode()).hexdigest()
 
 
-def resolve_google_news_url(google_url):
-    """Resolve a Google News redirect URL to the actual article URL."""
-    try:
-        resp = requests.head(google_url, allow_redirects=True, timeout=10,
-                             headers={"User-Agent": "Mozilla/5.0"})
-        return resp.url
-    except Exception:
-        try:
-            resp = requests.get(google_url, allow_redirects=True, timeout=10,
-                                headers={"User-Agent": "Mozilla/5.0"},
-                                stream=True)
-            return resp.url
-        except Exception:
-            return google_url
-
-
 # ── Article Discovery ────────────────────────────────────────────────────────
 
 def fetch_rss_articles(cutoff):
@@ -342,68 +326,7 @@ def fetch_google_news(cutoff):
     return articles
 
 
-# ── Direct Section Scraping (logged-in) ──────────────────────────────────────
-
-AFR_SECTIONS = {
-    "https://www.afr.com/street-talk": "AFR",
-    "https://www.afr.com/companies": "AFR",
-    "https://www.afr.com/markets": "AFR",
-}
-
-AUSTRALIAN_SECTIONS = {
-    "https://www.theaustralian.com.au/business": "The Australian",
-}
-
-
-def scrape_section_links(session, section_url, source_name):
-    """Scrape article links from a section page using an authenticated session."""
-    articles = []
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        }
-        resp = session.get(section_url, headers=headers, timeout=30)
-        if resp.status_code != 200:
-            print(f"[Section] Non-200 for {section_url}: {resp.status_code}")
-            return articles
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Find article links — AFR and The Australian both use <a> tags with href to article paths
-        seen_urls = set()
-        for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
-
-            # Build absolute URL
-            if href.startswith("/"):
-                from urllib.parse import urlparse
-                parsed = urlparse(section_url)
-                href = f"{parsed.scheme}://{parsed.netloc}{href}"
-
-            # Filter: must be on the same domain and look like an article path
-            if source_name == "AFR" and "afr.com" not in href:
-                continue
-            if source_name == "The Australian" and "theaustralian.com.au" not in href:
-                continue
-
-            # Skip non-article links (sections, tags, authors, etc.)
-            skip_patterns = ["/topic/", "/by/", "/author/", "/video/", "/podcast/",
-                             "/newsletters", "/subscribe", "/login", "/search",
-                             "#", "javascript:", "/rss"]
-            if any(p in href.lower() for p in skip_patterns):
-                continue
-
-            # Must have a slug-like path (at least 3 segments or a date pattern)
-            path_parts = href.rstrip("/").split("/")
-            if len(path_parts) < 5:
-                continue
-
-            if href in seen_urls:
-                continue
-            seen_urls.add(href)
-
-            # Extract title from the link text or nearest heading
-            title = a_tag.get_text(strip=True)
-            if not title or len(title) < 10
+# ── Paywall Authentication & Scraping ────────────────────────────────────────
 
 def login_afr(session):
     """Authenticate with AFR (Nine Entertainment SSO)."""
