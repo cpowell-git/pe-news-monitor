@@ -115,7 +115,7 @@ EXCEL_PATH = Path(os.getenv("EXCEL_PATH", "news_log.xlsx"))
 
 def get_lookback_hours():
     """Temporarily extended for testing."""
-    return 168
+    return 1680
 
 
 def is_reputable(url):
