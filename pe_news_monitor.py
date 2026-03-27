@@ -210,7 +210,7 @@ EXCEL_PATH = Path(os.getenv("EXCEL_PATH", "news_log.xlsx"))
 def get_lookback_hours():
     """72 hours on Monday, 24 hours otherwise."""
     now = datetime.now(timezone.utc)
-    return 72 if now.weekday() == 0 else 2400
+    return 72 if now.weekday() == 0 else 24
 
 
 def is_reputable(url):
