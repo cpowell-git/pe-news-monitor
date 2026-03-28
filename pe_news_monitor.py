@@ -211,7 +211,7 @@ EXCEL_PATH = Path(os.getenv("EXCEL_PATH", "news_log.xlsx"))
 def get_lookback_hours():
     """72 hours on Monday, 24 hours otherwise."""
     now = datetime.now(timezone.utc)
-    return 72 if now.weekday() == 0 else 2400
+    return 72 if now.weekday() == 0 else 24
 
 
 def is_reputable(url):
@@ -491,7 +491,7 @@ def scrape_afr_sections(session, cutoff):
                 print(f"[AFR Scrape] Non-200 for {section_url}: {resp.status_code}")
                 continue
             soup = BeautifulSoup(resp.text, "html.parser")
-            seen_urls = set()
+            section_articles = {}
             for a_tag in soup.find_all("a", href=True):
                 href = a_tag["href"]
                 if href.startswith("/"):
@@ -500,20 +500,25 @@ def scrape_afr_sections(session, cutoff):
                     continue
                 # Skip non-article links
                 skip = ["/topic/", "/by/", "/author/", "/video/", "/podcast/",
-                        "/newsletters", "/subscribe", "/login", "/search", "#", "javascript:", "/rss"]
+                        "/newsletters", "/subscribe", "/login", "/search",
+                        "javascript:", "/rss", "/accessibility"]
                 if any(p in href.lower() for p in skip):
                     continue
-                # Articles have date-like patterns in URL (e.g. /20260327-)
-                if not re.search(r'/\d{8}-', href):
-                    continue
-                if href in seen_urls:
-                    continue
-                seen_urls.add(href)
+                # Articles must have a slug with an ID pattern (e.g. -p5pt7k)
+                if not re.search(r'-p[a-z0-9]{4,}$', href.rstrip('/')):
+                    # Or a date-like pattern
+                    if not re.search(r'/\d{8}-', href):
+                        continue
                 title = a_tag.get_text(strip=True)
                 if not title or len(title) < 15:
                     continue
+                # Dedup within section
+                if href in section_articles:
+                    continue
+                section_articles[href] = title
+
+            for href, title in section_articles.items():
                 topic = classify_article(title)
-                # Auto-include Street Talk articles
                 if not topic and "street-talk" in section_url:
                     topic = "Private Equity & M&A"
                 if not topic:
@@ -528,10 +533,10 @@ def scrape_afr_sections(session, cutoff):
                         "date": datetime.now(timezone.utc),
                         "snippet": "",
                     }
-            print(f"[AFR Scrape] {section_url} — {len(seen_urls)} links found")
+            print(f"[AFR Scrape] {section_url} — {len(section_articles)} article links found")
         except Exception as e:
             print(f"[AFR Scrape] Error scraping {section_url}: {e}")
-    print(f"[AFR Scrape] Total: {len(articles)} articles from AFR sections")
+    print(f"[AFR Scrape] Total: {len(articles)} relevant articles from AFR sections")
     return articles
 
 
@@ -544,20 +549,34 @@ def fetch_full_article(url, session):
             print(f"[Scrape] Non-200 for {url}: {resp.status_code}")
             return None
         soup = BeautifulSoup(resp.text, "html.parser")
-        body = (
-            soup.find("div", {"id": "article-body"})
-            or soup.find("div", class_=re.compile(r"article[_-]?body|story[_-]?body", re.I))
-            or soup.find("div", {"id": "story"})
-            or soup.find("article")
-        )
+
+        # AFR uses hashed CSS module classes like "b661c1fd082d4a03-articleBody"
+        body = soup.find("div", class_=re.compile(r'articleBody', re.I))
+        if not body:
+            body = soup.find("div", {"id": "article-body"})
+        if not body:
+            body = soup.find("div", class_=re.compile(r'article[_-]?body|story[_-]?body', re.I))
+        if not body:
+            body = soup.find("div", {"id": "story"})
+        if not body:
+            body = soup.find("article")
+
         if body:
             text = "\n".join(p.get_text(strip=True) for p in body.find_all("p") if p.get_text(strip=True))
             if len(text) > 200:
                 return text
-        print(f"[Scrape] Could not extract body from {url}")
+
+        # Fallback: grab all paragraphs from the page if no container found
+        all_paras = soup.find_all("p")
+        text = "\n".join(p.get_text(strip=True) for p in all_paras if len(p.get_text(strip=True)) > 40)
+        if len(text) > 200:
+            print(f"[Scrape] Used fallback paragraph extraction for {url[:60]}")
+            return text
+
+        print(f"[Scrape] Could not extract body from {url[:60]}")
         return None
     except Exception as e:
-        print(f"[Scrape] Error fetching {url}: {e}")
+        print(f"[Scrape] Error fetching {url[:60]}: {e}")
         return None
 
 
