@@ -245,6 +245,7 @@ SOURCE_NAME_MAP = {
     "australian financial review": "AFR",
     "afr": "AFR",
     "the australian": "The Australian",
+    "theaustralian.com.au": "The Australian",
     "reuters": "Reuters",
     "bloomberg": "Bloomberg",
     "financial times": "Financial Times",
@@ -252,6 +253,7 @@ SOURCE_NAME_MAP = {
     "wsj": "Wall Street Journal",
     "qsr media": "QSR Media",
     "qsrmedia": "QSR Media",
+    "qsrmedia.com.au": "QSR Media",
     "franchise business": "Franchise Business",
     "inside franchise business": "Inside Franchise Business",
     "smartcompany": "SmartCompany",
@@ -264,6 +266,7 @@ SOURCE_NAME_MAP = {
     "news.com.au": "News.com.au",
     "nine news": "Nine News",
     "9news": "Nine News",
+    "9news.com.au": "Nine News",
     "the guardian": "The Guardian",
     "guardian australia": "The Guardian",
 }
@@ -420,26 +423,33 @@ def login_afr(session):
 
 
 def login_australian(session):
-    try:
-        resp = session.post(
-            "https://auth-api.news.com.au/v4/login",
-            json={"email": AUSTRALIAN_EMAIL, "password": AUSTRALIAN_PASSWORD},
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Origin": "https://www.theaustralian.com.au",
-                "Referer": "https://www.theaustralian.com.au/",
-            },
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            print("[The Australian] Login successful")
-            return True
-        print(f"[The Australian] Login failed: {resp.status_code} — {resp.text[:200]}")
-        return False
-    except Exception as e:
-        print(f"[The Australian] Login error: {e}")
-        return False
+    # Try multiple known News Corp auth endpoints
+    endpoints = [
+        "https://api.newscorpaustralia.com/v4/login",
+        "https://auth-api.news.com.au/v4/login",
+        "https://component-api.news.com.au/v4/login",
+    ]
+    for login_url in endpoints:
+        try:
+            resp = session.post(
+                login_url,
+                json={"email": AUSTRALIAN_EMAIL, "password": AUSTRALIAN_PASSWORD},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Origin": "https://www.theaustralian.com.au",
+                    "Referer": "https://www.theaustralian.com.au/",
+                },
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                print(f"[The Australian] Login successful via {login_url}")
+                return True
+            print(f"[The Australian] {login_url} — {resp.status_code}")
+        except Exception as e:
+            print(f"[The Australian] {login_url} — {e}")
+    print("[The Australian] All login endpoints failed")
+    return False
 
 
 def fetch_full_article(url, session):
@@ -655,17 +665,47 @@ def main():
     aus_logged_in = login_australian(aus_session) if AUSTRALIAN_EMAIL else False
 
     # 3. Fetch full text & summarise paywalled articles
+    PAYWALL_SOURCES = {"AFR": "afr.com", "The Australian": "theaustralian.com.au"}
     for aid, art in articles.items():
-        is_paywall = any(d in art["url"] for d in PAYWALL_DOMAINS)
-        if not is_paywall:
+        source_name = art.get("source", "")
+        if source_name not in PAYWALL_SOURCES:
             continue
-        session = afr_session if "afr.com" in art["url"] else aus_session
-        logged_in = afr_logged_in if "afr.com" in art["url"] else aus_logged_in
+
+        # Determine which session to use
+        if source_name == "AFR":
+            session, logged_in = afr_session, afr_logged_in
+        else:
+            session, logged_in = aus_session, aus_logged_in
         if not logged_in:
             continue
-        full_text = fetch_full_article(art["url"], session)
+
+        # Resolve Google News redirect URLs to get the actual article URL
+        fetch_url = art["url"]
+        if "news.google.com" in fetch_url:
+            try:
+                resp = requests.head(fetch_url, allow_redirects=True, timeout=10,
+                                     headers={"User-Agent": "Mozilla/5.0"})
+                if PAYWALL_SOURCES[source_name] in resp.url:
+                    fetch_url = resp.url
+                    print(f"[Resolve] {source_name} URL resolved: {fetch_url[:80]}...")
+                else:
+                    # Try GET if HEAD didn't resolve
+                    resp = requests.get(fetch_url, allow_redirects=True, timeout=10,
+                                        headers={"User-Agent": "Mozilla/5.0"}, stream=True)
+                    if PAYWALL_SOURCES[source_name] in resp.url:
+                        fetch_url = resp.url
+                        print(f"[Resolve] {source_name} URL resolved: {fetch_url[:80]}...")
+                    else:
+                        print(f"[Resolve] Could not resolve to {source_name} URL: {resp.url[:80]}")
+                        continue
+            except Exception as e:
+                print(f"[Resolve] Error resolving {source_name} URL: {e}")
+                continue
+
+        full_text = fetch_full_article(fetch_url, session)
         if full_text:
             art["summary"] = summarise_article(art["title"], full_text)
+            print(f"[Summary] Generated for: {art['title'][:60]}")
         else:
             art["summary"] = ""
 
