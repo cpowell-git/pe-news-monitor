@@ -474,6 +474,67 @@ def login_australian(session):
     return False
 
 
+def scrape_afr_sections(session, cutoff):
+    """Scrape article links directly from AFR section pages using authenticated session."""
+    AFR_SECTION_URLS = [
+        "https://www.afr.com/street-talk",
+        "https://www.afr.com/companies",
+        "https://www.afr.com/markets",
+    ]
+    articles = {}
+    for section_url in AFR_SECTION_URLS:
+        try:
+            resp = session.get(section_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }, timeout=30)
+            if resp.status_code != 200:
+                print(f"[AFR Scrape] Non-200 for {section_url}: {resp.status_code}")
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            seen_urls = set()
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag["href"]
+                if href.startswith("/"):
+                    href = f"https://www.afr.com{href}"
+                if "afr.com" not in href:
+                    continue
+                # Skip non-article links
+                skip = ["/topic/", "/by/", "/author/", "/video/", "/podcast/",
+                        "/newsletters", "/subscribe", "/login", "/search", "#", "javascript:", "/rss"]
+                if any(p in href.lower() for p in skip):
+                    continue
+                # Articles have date-like patterns in URL (e.g. /20260327-)
+                if not re.search(r'/\d{8}-', href):
+                    continue
+                if href in seen_urls:
+                    continue
+                seen_urls.add(href)
+                title = a_tag.get_text(strip=True)
+                if not title or len(title) < 15:
+                    continue
+                topic = classify_article(title)
+                # Auto-include Street Talk articles
+                if not topic and "street-talk" in section_url:
+                    topic = "Private Equity & M&A"
+                if not topic:
+                    continue
+                aid = article_id(href)
+                if aid not in articles:
+                    articles[aid] = {
+                        "title": title,
+                        "url": href,
+                        "source": "AFR",
+                        "topic": topic,
+                        "date": datetime.now(timezone.utc),
+                        "snippet": "",
+                    }
+            print(f"[AFR Scrape] {section_url} — {len(seen_urls)} links found")
+        except Exception as e:
+            print(f"[AFR Scrape] Error scraping {section_url}: {e}")
+    print(f"[AFR Scrape] Total: {len(articles)} articles from AFR sections")
+    return articles
+
+
 def fetch_full_article(url, session):
     try:
         resp = session.get(url, headers={
@@ -668,10 +729,21 @@ def main():
     cutoff = run_date - timedelta(hours=lookback)
     print(f"[Run] {run_date.strftime('%Y-%m-%d %H:%M UTC')} — looking back {lookback}h to {cutoff.strftime('%Y-%m-%d %H:%M UTC')}")
 
-    # 1. Discover articles
+    # 1. Authenticate first (needed for AFR section scraping)
+    afr_session = requests.Session()
+    aus_session = requests.Session()
+    afr_logged_in = login_afr(afr_session) if AFR_EMAIL else False
+    aus_logged_in = login_australian(aus_session) if AUSTRALIAN_EMAIL else False
+
+    # 2. Discover articles from all sources
     articles = {}
     articles.update(fetch_rss_articles(cutoff))
     articles.update(fetch_google_news(cutoff))
+
+    # 3. Scrape AFR section pages directly (gets real URLs, bypasses Google News encoding)
+    if afr_logged_in:
+        articles.update(scrape_afr_sections(afr_session, cutoff))
+
     print(f"[Discovery] {len(articles)} total articles found")
 
     if not articles:
@@ -680,68 +752,33 @@ def main():
         send_email(html, run_date)
         return
 
-    # 2. Authenticate with paywalled sites
-    afr_session = requests.Session()
-    aus_session = requests.Session()
-    afr_logged_in = login_afr(afr_session) if AFR_EMAIL else False
-    aus_logged_in = login_australian(aus_session) if AUSTRALIAN_EMAIL else False
-
-    # 3. Fetch full text & summarise paywalled articles
-    PAYWALL_SOURCES = {"AFR": "afr.com", "The Australian": "theaustralian.com.au"}
+    # 4. Fetch full text & summarise AFR articles (they have real URLs from scraping)
     for aid, art in articles.items():
-        source_name = art.get("source", "")
-        if source_name not in PAYWALL_SOURCES:
+        if art.get("source") != "AFR" or not afr_logged_in:
             continue
-
-        # Determine which session to use
-        if source_name == "AFR":
-            session, logged_in = afr_session, afr_logged_in
-        else:
-            session, logged_in = aus_session, aus_logged_in
-        if not logged_in:
+        # Skip Google News URLs — we can't resolve them
+        if "news.google.com" in art["url"]:
             continue
-
-        # Resolve Google News redirect URLs to get the actual article URL
-        fetch_url = art["url"]
-        if "news.google.com" in fetch_url:
-            # Try decoding the URL directly from the Google News article ID
-            decoded_url = decode_google_news_url(fetch_url)
-            if decoded_url and PAYWALL_SOURCES[source_name] in decoded_url:
-                fetch_url = decoded_url
-                print(f"[Resolve] {source_name} URL decoded: {fetch_url[:80]}...")
-            else:
-                # Fallback: try HTTP redirect
-                try:
-                    resp = requests.get(fetch_url, allow_redirects=True, timeout=10,
-                                        headers={"User-Agent": "Mozilla/5.0"}, stream=True)
-                    if PAYWALL_SOURCES[source_name] in resp.url:
-                        fetch_url = resp.url
-                        print(f"[Resolve] {source_name} URL resolved via redirect: {fetch_url[:80]}...")
-                    else:
-                        print(f"[Resolve] Could not resolve to {source_name} URL")
-                        continue
-                except Exception as e:
-                    print(f"[Resolve] Error resolving {source_name} URL: {e}")
-                    continue
-
-        full_text = fetch_full_article(fetch_url, session)
+        if "afr.com" not in art["url"]:
+            continue
+        full_text = fetch_full_article(art["url"], afr_session)
         if full_text:
             art["summary"] = summarise_article(art["title"], full_text)
             print(f"[Summary] Generated for: {art['title'][:60]}")
         else:
             art["summary"] = ""
 
-    # 4. Group by topic
+    # 5. Group by topic
     articles_list = sorted(articles.values(), key=lambda a: a["date"], reverse=True)
     articles_by_topic = {}
     for art in articles_list:
         articles_by_topic.setdefault(art["topic"], []).append(art)
 
-    # 5. Send email digest
+    # 6. Send email digest
     html = build_email_html(articles_by_topic, run_date)
     send_email(html, run_date)
 
-    # 6. Append to Excel log
+    # 7. Append to Excel log
     append_to_excel(articles_list)
 
     print(f"[Run] Complete — {len(articles_list)} articles processed")
