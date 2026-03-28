@@ -9,6 +9,7 @@ import re
 import json
 import smtplib
 import hashlib
+import base64
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -232,6 +233,27 @@ def classify_article(title, snippet=""):
 
 def article_id(url):
     return hashlib.md5(url.encode()).hexdigest()
+
+
+def decode_google_news_url(google_url):
+    """Decode the actual article URL from a Google News encoded URL."""
+    match = re.search(r'/articles/(.+?)(?:\?|$)', google_url)
+    if not match:
+        return None
+    article_id_str = match.group(1)
+    # Pad base64 if needed
+    padding = 4 - len(article_id_str) % 4
+    if padding != 4:
+        article_id_str += '=' * padding
+    try:
+        decoded = base64.urlsafe_b64decode(article_id_str)
+        urls = re.findall(rb'https?://[^\s\x00-\x1f"\'<>]+', decoded)
+        for url_bytes in urls:
+            url_str = url_bytes.decode('utf-8', errors='ignore')
+            return url_str
+    except Exception:
+        pass
+    return None
 
 
 def is_auto_include_rss(feed_url):
@@ -682,25 +704,25 @@ def main():
         # Resolve Google News redirect URLs to get the actual article URL
         fetch_url = art["url"]
         if "news.google.com" in fetch_url:
-            try:
-                resp = requests.head(fetch_url, allow_redirects=True, timeout=10,
-                                     headers={"User-Agent": "Mozilla/5.0"})
-                if PAYWALL_SOURCES[source_name] in resp.url:
-                    fetch_url = resp.url
-                    print(f"[Resolve] {source_name} URL resolved: {fetch_url[:80]}...")
-                else:
-                    # Try GET if HEAD didn't resolve
+            # Try decoding the URL directly from the Google News article ID
+            decoded_url = decode_google_news_url(fetch_url)
+            if decoded_url and PAYWALL_SOURCES[source_name] in decoded_url:
+                fetch_url = decoded_url
+                print(f"[Resolve] {source_name} URL decoded: {fetch_url[:80]}...")
+            else:
+                # Fallback: try HTTP redirect
+                try:
                     resp = requests.get(fetch_url, allow_redirects=True, timeout=10,
                                         headers={"User-Agent": "Mozilla/5.0"}, stream=True)
                     if PAYWALL_SOURCES[source_name] in resp.url:
                         fetch_url = resp.url
-                        print(f"[Resolve] {source_name} URL resolved: {fetch_url[:80]}...")
+                        print(f"[Resolve] {source_name} URL resolved via redirect: {fetch_url[:80]}...")
                     else:
-                        print(f"[Resolve] Could not resolve to {source_name} URL: {resp.url[:80]}")
+                        print(f"[Resolve] Could not resolve to {source_name} URL")
                         continue
-            except Exception as e:
-                print(f"[Resolve] Error resolving {source_name} URL: {e}")
-                continue
+                except Exception as e:
+                    print(f"[Resolve] Error resolving {source_name} URL: {e}")
+                    continue
 
         full_text = fetch_full_article(fetch_url, session)
         if full_text:
